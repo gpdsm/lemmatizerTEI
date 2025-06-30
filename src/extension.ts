@@ -1,68 +1,79 @@
 // src/extension.ts
 import * as vscode from 'vscode';
 
-// Simulazione database in questo caso ho il lemma od occorrenza
-const normalizzazioneDB: Record<string, string> = {
-    "cane": "canide",
-    "gatto": "felino",
-    "cavallo": "equide",
-    "pesce": "ittico",
-    "uccello": "ornitologico",
-};
-// prima forse devo cercare nei lemmi, poi nei sinonimi, poi nella lista di parole
-// Lista di parole da usare per la ricerca della parola più vicina
-const myWordList: string[] = ["mela", "pera", "banana", "mare", "pane", "melo"];
+// Nuova struttura di normalizzazione
+const normalizzazioneDB = [
+    {
+        concetto: "enjambement",
+        lemma: "inarcatura",
+        forme: ["inarcature", "inarcamenti", "inarcare"]
+    },
+    {
+        concetto: "enjambement",
+        lemma: "slittamento",
+        forme: ["slittamenti", "slittare"]
+    },
+    {
+        concetto: "metafora",
+        lemma: "traslato",
+        forme: ["traslazione", "traslati", "metafore"]
+    }
+];
 
-// Implementazione della Distanza di Levenshtein
-// Fonte: https://en.wikipedia.org/wiki/Levenshtein_distance#Iterative_with_full_matrix
 function levenshteinDistance(s1: string, s2: string): number {
-    s1 = s1.toLowerCase();
-    s2 = s2.toLowerCase();
-
-    const costs: number[] = [];
-    for (let i = 0; i <= s1.length; i++) {
-        let lastValue = i;
-        for (let j = 0; j <= s2.length; j++) {
-            if (i === 0) {
-                costs[j] = j;
-            } else if (j > 0) {
-                let newValue = costs[j - 1];
-                if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
-                    newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                }
-                costs[j - 1] = lastValue;
-                lastValue = newValue;
-            }
-        }
-        if (i > 0) {
-            costs[s2.length] = lastValue;
+    const dp: number[][] = Array(s1.length + 1).fill(null).map(() => Array(s2.length + 1).fill(0));
+    for (let i = 0; i <= s1.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= s2.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= s1.length; i++) {
+        for (let j = 1; j <= s2.length; j++) {
+            const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost
+            );
         }
     }
-    return costs[s2.length];
+    return dp[s1.length][s2.length];
 }
 
-function findClosestWord(targetWord: string, wordList: string[]): string | null {
-    if (wordList.length === 0) {
-        return null; // La lista è vuota
-    }
-
-    let closestWord: string = wordList[0];
-    let minDistance: number = levenshteinDistance(targetWord, wordList[0]);
-
-    for (let i = 1; i < wordList.length; i++) {
-        const currentWord = wordList[i];
-        const currentDistance = levenshteinDistance(targetWord, currentWord);
-
-        if (currentDistance < minDistance) {
-            minDistance = currentDistance;
-            closestWord = currentWord;
+function trovaNormalizzazione(parola: string): { label: string, lemma: string, ref: string }[] {
+    const risultati: { label: string, lemma: string, ref: string }[] = [];
+    for (const entry of normalizzazioneDB) {
+        if (entry.forme.includes(parola)) {
+            risultati.push({
+                label: `${parola} (forma) → ${entry.concetto}`,
+                lemma: entry.lemma,
+                ref: `http://example.org/skos/${entry.concetto}`
+            });
+        } else if (entry.lemma === parola) {
+            risultati.push({
+                label: `${parola} (lemma) → ${entry.concetto}`,
+                lemma: entry.lemma,
+                ref: `http://example.org/skos/${entry.concetto}`
+            });
         }
     }
-    vscode.window.showInformationMessage(`Parola più vicina a "${targetWord}": ${closestWord}`);
-
-    return closestWord;
+    return risultati;
 }
 
+function suggerimentiSimili(parola: string): { label: string, lemma: string, ref: string }[] {
+    const tutteForme = normalizzazioneDB.flatMap(entry =>
+        entry.forme.map(f => ({ tipo: "forma", forma: f, lemma: entry.lemma, concetto: entry.concetto }))
+    );
+    const punteggiati = tutteForme.map(f => ({
+        ...f,
+        distanza: levenshteinDistance(parola, f.forma)
+    }));
+    return punteggiati
+        .sort((a, b) => a.distanza - b.distanza)
+        .slice(0, 5)
+        .map(p => ({
+            label: `${p.forma} (forma) → ${p.concetto}`,
+            lemma: p.lemma,
+            ref: `http://example.org/skos/${p.concetto}`
+        }));
+}
 
 export function activate(context: vscode.ExtensionContext) {
     const disposable = vscode.commands.registerCommand('lemmatizerTEI.tagWord', async () => {
@@ -84,73 +95,43 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const normalizzata = selectedText.toLowerCase();
-        let altValueSuggestion: string | null = null; // Il valore che suggeriremo per 'alt'
+        let opzioni = trovaNormalizzazione(normalizzata);
 
-        // Logica di ricerca della normalizzazione:
-
-        // TENTATIVO 1: Corrispondenza esatta nel normalizzazioneDB
-        if (normalizzazioneDB[normalizzata]) {
-            altValueSuggestion = normalizzazioneDB[normalizzata];
-            vscode.window.showInformationMessage(`Trovata corrispondenza esatta nel DB: ${altValueSuggestion}`);
-        } else {
-            // TENTATIVO 2: Nessuna corrispondenza esatta. Cerchiamo la parola più vicina.
-            // Dove cerchiamo la parola più vicina?
-            // OPTION A: Nelle CHIAVI del normalizzazioneDB (es. per correggere "cani" a "cane" -> "canide")
-            const dbKeys = Object.keys(normalizzazioneDB);
-            const closestKeyInDb = findClosestWord(normalizzata, dbKeys);
-
-            // OPTION B: Nella myWordList generica (se myWordList contiene un vocabolario di lemmi/sinonimi alternativi)
-            // const closestWordInMyList = findClosestWord(normalizzata, myWordList);
-
-            // Decidi quale usare o come combinare.
-            // Qui useremo closestKeyInDb, applicando una soglia per accettare un match come "vicino"
-            const LEVENSHTEIN_THRESHOLD = 2; // Distanza massima accettabile per considerare "vicino"
-
-            if (closestKeyInDb !== null && levenshteinDistance(normalizzata, closestKeyInDb) <= LEVENSHTEIN_THRESHOLD) {
-                altValueSuggestion = normalizzazioneDB[closestKeyInDb]; // Prendi il valore normalizzato dalla chiave vicina
-                vscode.window.showInformationMessage(`Nessuna esatta. Trovata parola simile ("${closestKeyInDb}") nel DB: ${altValueSuggestion}`);
-            } else {
-                // Se non troviamo una chiave vicina valida nel DB, potremmo cercare in myWordList
-                // OPPURE decidere che non c'è una normalizzazione automatica.
-                const closestWordInMyList = findClosestWord(normalizzata, myWordList);
-                if (closestWordInMyList !== null && levenshteinDistance(normalizzata, closestWordInMyList) <= LEVENSHTEIN_THRESHOLD) {
-                    altValueSuggestion = closestWordInMyList; // Qui suggerisci la parola vicina stessa
-                    vscode.window.showInformationMessage(`Nessuna esatta nel DB. Trovata parola simile in myWordList: ${altValueSuggestion}`);
-                } else {
-                     vscode.window.showInformationMessage(`Nessuna corrispondenza automatica o parola vicina trovata.`);
-                     altValueSuggestion = null; // Nessun suggerimento automatico
-                }
-            }
+        if (opzioni.length === 0) {
+            opzioni = suggerimentiSimili(normalizzata);
         }
 
-        // Ora costruiamo le opzioni per il QuickPick
-        const opzioni: string[] = [];
-        if (altValueSuggestion) {
-            opzioni.push(altValueSuggestion);
-        }
-        opzioni.push('sconosciuto', 'manuale'); // Queste sono sempre disponibili
+        const quickPickItems = opzioni.map(opt => ({
+            label: opt.label,
+            lemma: opt.lemma,
+            ref: opt.ref
+        }));
 
-        const scelta = await vscode.window.showQuickPick(opzioni, {
-            placeHolder: `Seleziona il valore da usare per 'alt' per "${selectedText}"`,
+        quickPickItems.push(
+            { label: 'sconosciuto', lemma: 'sconosciuto', ref: '' },
+            { label: 'manuale', lemma: '', ref: '' }
+        );
+
+        const scelta = await vscode.window.showQuickPick(quickPickItems, {
+            placeHolder: `Seleziona il valore per "${selectedText}"`,
             canPickMany: false
         });
 
-        if (scelta === undefined) {
-            vscode.window.showInformationMessage('Nessuna scelta effettuata.');
-            return;
-        }
+        if (!scelta) return;
 
-        let altValue = scelta;
+        let taggedText = '';
 
-        if (scelta === 'manuale') {
+        if (scelta.label === 'manuale') {
             const manuale = await vscode.window.showInputBox({
-                prompt: 'Inserisci manualmente il valore per l\'attributo alt'
+                prompt: 'Inserisci manualmente il valore per l\'attributo lemma'
             });
             if (!manuale) return;
-            altValue = manuale;
+            taggedText = `<w xml:id="w1" lemma="${manuale}">${selectedText}</w>`;
+        } else if (scelta.label === 'sconosciuto') {
+            taggedText = `<w xml:id="w1" lemma="sconosciuto">${selectedText}</w>`;
+        } else {
+            taggedText = `<w xml:id="w1" lemma="${scelta.lemma}" ref="${scelta.ref}">${selectedText}</w>`;
         }
-
-        const taggedText = `<w lemma="${altValue}">${selectedText}</w>`;
 
         editor.edit(editBuilder => {
             editBuilder.replace(editor.selection, taggedText);
