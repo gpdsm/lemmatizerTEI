@@ -1,0 +1,36 @@
+{
+  "name": "lemmatizertei",
+  "displayName": "TEI lemmatizer",
+  "description": "Tags the word in a TEI XML document finding the closest match from a list of occurences.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "activationEvents": [
+    "onCommand:lemmatizerTEI.tagWord"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lemmatizerTEI.tagWord",
+        "title": "Tagga con XML"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "lemmatizerTEI.tagWord",
+        "key": "ctrl+alt+t",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "tsc -p ./",
+    "compile": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "typescript": "^4.4.0",
+    "vscode": "^1.1.37"
+  }
+}
