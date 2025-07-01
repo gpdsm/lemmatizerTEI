@@ -2,10 +2,6 @@
 A VisualStudio Code extension for assisted lemmatization of TEI documents.
 
 
- 
-We have 
-
-
 |Occorrenza    | Lemma       | Concetto  |
 |--------------|-------------|-----------|
 |inarcature    |inarcatura   |enjambement|
@@ -16,13 +12,14 @@ We have
 
 ## Local testing
 
+Una volta entrati nella cartella dell'applicazione:
 ```
 npm install
 npm run compile
 ```
-Select the `extension.ts` file in the `src` folder.
-Run > Start Debugging
+Open VisualStudio Code and select the `extension.ts` file in the `src` folder.
 
+Run > Start Debugging
 
 Ora si può aprire un file XML e testare mettendo il cursore Ctrl + Alt + T (o Cmd + Alt + T su Mac)
 
